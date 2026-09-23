@@ -6,7 +6,7 @@ SECRET_KEY = 'django-insecure-sprint0-organizador-eventos-dev-key'
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
