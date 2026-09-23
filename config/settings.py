@@ -7,9 +7,6 @@ SECRET_KEY = 'django-insecure-sprint0-organizador-eventos-dev-key'
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
-    '127.0.0.1',
-    'organizador-eventos-back.onrender.com',
-    '.onrender.com',]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -18,7 +15,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     'rest_framework',
     'corsheaders',
     'api',
@@ -61,20 +57,7 @@ DATABASES = {
     }
 }
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
+AUTH_PASSWORD_VALIDATORS = []
 
 LANGUAGE_CODE = 'es-co'
 
@@ -89,4 +72,3 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOW_ALL_ORIGINS = True
-
