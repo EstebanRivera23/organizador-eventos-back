@@ -6,7 +6,7 @@ SECRET_KEY = 'django-insecure-sprint0-organizador-eventos-dev-key'
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost',
+ALLOWED_HOSTS = ['*']
     '127.0.0.1',
     'organizador-eventos-back.onrender.com',
     '.onrender.com',]
