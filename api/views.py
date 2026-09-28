@@ -2,7 +2,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Organizador, Evento
+from .models import Organizador, Evento, Subtarea
 from .serializers import EventoSerializer, SubtareaSerializer
 
 
@@ -99,3 +99,31 @@ def subtareas_by_evento(request, evento_id):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+@api_view(["GET", "PUT", "PATCH", "DELETE"])
+def subtarea_detail(request, pk):
+    try:
+        subtarea = Subtarea.objects.get(pk=pk)
+    except Subtarea.DoesNotExist:
+        return Response(
+            {"detail": "Subtarea no encontrada."},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if request.method == "GET":
+        serializer = SubtareaSerializer(subtarea)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    if request.method in ["PUT", "PATCH"]:
+        serializer = SubtareaSerializer(subtarea, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            subtarea = serializer.save()
+            response_serializer = SubtareaSerializer(subtarea)
+            return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == "DELETE":
+        subtarea.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

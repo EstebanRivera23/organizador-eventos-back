@@ -4,6 +4,7 @@ from .views import (
     eventos_list_create,
     evento_detail,
     subtareas_by_evento,
+    subtarea_detail,
 )
 
 urlpatterns = [
@@ -16,4 +17,5 @@ urlpatterns = [
         subtareas_by_evento,
         name="subtareas_by_evento"
     ),
+    path("subtareas/<int:pk>/", subtarea_detail, name="subtarea_detail"),
 ]
