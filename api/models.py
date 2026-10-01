@@ -6,6 +6,7 @@ class Organizador(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nombre = models.TextField()
     email = models.TextField(unique=True, null=True, blank=True)
+    password_hash = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
