@@ -2,6 +2,9 @@
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
+from django.conf import settings
+from django.contrib.auth.hashers import check_password, make_password
+from django.core import signing
 
 from .models import Organizador, Evento, Subtarea
 from .serializers import EventoSerializer, SubtareaSerializer
@@ -19,38 +22,36 @@ def health_check(request):
 
 def obtener_organizador_autenticado(request):
     """
-    Login simple para Sprint 2.
+    Valida token firmado para Sprint 2.
 
-    El frontend debe enviar el token recibido en /api/login/ así:
-    Authorization: Bearer <organizador_id>
-
-    Para pruebas también permite:
-    X-Organizador-Id: <organizador_id>
-    ?organizador_id=<organizador_id>
+    El frontend debe enviar:
+    Authorization: Bearer <token_firmado>
     """
     auth_header = request.headers.get("Authorization", "")
-    token = ""
 
-    if auth_header.startswith("Bearer "):
-        token = auth_header.replace("Bearer ", "").strip()
-
-    if not token:
-        token = request.headers.get("X-Organizador-Id", "").strip()
-
-    if not token:
-        token = request.query_params.get("organizador_id", "").strip()
-
-    if not token:
+    if not auth_header.startswith("Bearer "):
         return None, Response(
             {"detail": "No autenticado. Debe iniciar sesión."},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
+    token = auth_header.replace("Bearer ", "").strip()
+
     try:
-        organizador = Organizador.objects.get(id=token)
-    except (Organizador.DoesNotExist, ValueError):
+        organizador_id = signing.loads(
+            token,
+            salt="organizador-login",
+            max_age=60 * 60 * 8
+        )
+        organizador = Organizador.objects.get(id=organizador_id)
+    except signing.SignatureExpired:
         return None, Response(
-            {"detail": "Token inválido o organizador no encontrado."},
+            {"detail": "Sesión expirada. Debe iniciar sesión nuevamente."},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    except Exception:
+        return None, Response(
+            {"detail": "Token inválido o sesión no válida."},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
@@ -60,13 +61,14 @@ def obtener_organizador_autenticado(request):
 @api_view(["POST"])
 def login(request):
     """
-    Login básico por email para Sprint 2.
+    Login con email y contraseña para Sprint 2.
 
-    Si el organizador existe, lo retorna.
-    Si no existe, lo crea.
+    Si el email no existe, registra el organizador con la contraseña enviada.
+    Si el email existe, valida la contraseña.
     """
     email = str(request.data.get("email", "")).strip().lower()
     nombre = str(request.data.get("nombre", "")).strip()
+    password = str(request.data.get("password", "")).strip()
 
     if not email:
         return Response(
@@ -74,21 +76,51 @@ def login(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    if not password:
+        return Response(
+            {"password": ["Este campo es obligatorio."]},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    if len(password) < 6:
+        return Response(
+            {"password": ["La contraseña debe tener al menos 6 caracteres."]},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     if not nombre:
         nombre = email.split("@")[0]
 
-    organizador, created = Organizador.objects.get_or_create(
-        email=email,
-        defaults={"nombre": nombre}
-    )
+    organizador = Organizador.objects.filter(email=email).first()
 
-    if not created and nombre and organizador.nombre != nombre:
-        organizador.nombre = nombre
-        organizador.save(update_fields=["nombre"])
+    if organizador is None:
+        organizador = Organizador.objects.create(
+            email=email,
+            nombre=nombre,
+            password_hash=make_password(password)
+        )
+    else:
+        if not organizador.password_hash:
+            organizador.password_hash = make_password(password)
+            organizador.save(update_fields=["password_hash"])
+        elif not check_password(password, organizador.password_hash):
+            return Response(
+                {"detail": "Credenciales inválidas."},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        if nombre and organizador.nombre != nombre:
+            organizador.nombre = nombre
+            organizador.save(update_fields=["nombre"])
+
+    token = signing.dumps(
+        str(organizador.id),
+        salt="organizador-login"
+    )
 
     return Response({
         "message": "Login correcto",
-        "token": str(organizador.id),
+        "token": token,
         "organizador": {
             "id": str(organizador.id),
             "nombre": organizador.nombre,
@@ -226,6 +258,10 @@ def subtareas_hoy(request):
     - para_hoy
     - proximas
 
+    Filtros opcionales:
+    - evento_id
+    - estado
+
     Solo retorna subtareas del organizador autenticado.
     """
     organizador, error = obtener_organizador_autenticado(request)
@@ -234,11 +270,48 @@ def subtareas_hoy(request):
 
     hoy = timezone.localdate()
 
+    evento_id = request.query_params.get("evento_id")
+    estado = request.query_params.get("estado")
+
     subtareas_base = Subtarea.objects.filter(
         evento__organizador=organizador
-    ).exclude(
+    )
+
+    # Por defecto, no mostrar finalizadas en Vista Hoy
+    subtareas_base = subtareas_base.exclude(
         estado__iexact="finalizado"
     )
+
+    # Filtro por evento
+    if evento_id:
+        try:
+            evento = Evento.objects.get(
+                id=evento_id,
+                organizador=organizador
+            )
+        except Evento.DoesNotExist:
+            return Response(
+                {"detail": "Evento no encontrado para este organizador."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        subtareas_base = subtareas_base.filter(evento=evento)
+
+    # Filtro por estado
+    if estado:
+        estados_validos = ["por hacer", "en curso", "finalizado"]
+
+        if estado.lower() not in estados_validos:
+            return Response(
+                {
+                    "estado": [
+                        "Estado invalido. Use: por hacer, en curso o finalizado."
+                    ]
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        subtareas_base = subtareas_base.filter(estado__iexact=estado)
 
     vencidas = subtareas_base.filter(
         fecha_objetivo__lt=hoy
@@ -254,7 +327,11 @@ def subtareas_hoy(request):
 
     return Response({
         "fecha_actual": hoy,
-        "regla": "Se muestran primero las vencidas, luego las de hoy y después las próximas. En empate se prioriza menor esfuerzo estimado.",
+        "filtros": {
+            "evento_id": evento_id,
+            "estado": estado
+        },
+        "regla": "Se muestran primero las vencidas, luego las de hoy y despues las proximas. En empate se prioriza menor esfuerzo estimado.",
         "vencidas": SubtareaSerializer(vencidas, many=True).data,
         "para_hoy": SubtareaSerializer(para_hoy, many=True).data,
         "proximas": SubtareaSerializer(proximas, many=True).data
