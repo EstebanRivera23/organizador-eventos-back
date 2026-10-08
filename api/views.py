@@ -1,4 +1,7 @@
-﻿from django.utils import timezone
+﻿from decimal import Decimal
+
+from django.db.models import Sum
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -142,6 +145,75 @@ def organizador_me(request):
     })
 
 
+def formato_horas(horas):
+    """7.00 -> "7", 7.50 -> "7.5": así se muestran las horas en los mensajes."""
+    texto = f"{horas:.2f}".rstrip("0").rstrip(".")
+    return texto or "0"
+
+
+def esta_finalizada(estado):
+    return str(estado).strip().lower() == "finalizado"
+
+
+def detectar_sobrecarga(organizador, subtarea, cambios):
+    """
+    Revisa si guardar los cambios deja el día por encima del límite diario.
+
+    Suma las horas de todas las gestiones sin finalizar del organizador para
+    la fecha en la que quedaría la gestión, en todos sus eventos. Solo hay
+    conflicto si el cambio le agrega horas a ese día: reducir horas o cambiar
+    el título de una gestión que ya estaba en un día cargado no se bloquea.
+
+    Devuelve None si no hay conflicto, o el cuerpo de la respuesta 409.
+    """
+    fecha = cambios.get("fecha_objetivo", subtarea.fecha_objetivo)
+    horas = cambios.get("horas_estimadas", subtarea.horas_estimadas)
+    estado = cambios.get("estado", subtarea.estado)
+
+    if esta_finalizada(estado):
+        return None
+
+    horas_antes = Decimal("0")
+    if subtarea.fecha_objetivo == fecha and not esta_finalizada(subtarea.estado):
+        horas_antes = subtarea.horas_estimadas
+
+    if horas <= horas_antes:
+        return None
+
+    otras_gestiones = (
+        Subtarea.objects.filter(
+            evento__organizador=organizador,
+            fecha_objetivo=fecha,
+        )
+        .exclude(estado__iexact="finalizado")
+        .exclude(pk=subtarea.pk)
+        .aggregate(total=Sum("horas_estimadas"))["total"]
+        or Decimal("0")
+    )
+
+    limite = organizador.limite_horas_dia
+    horas_planificadas = otras_gestiones + horas
+
+    if horas_planificadas <= limite:
+        return None
+
+    return {
+        "detail": (
+            f"Quedarías con {formato_horas(horas_planificadas)}h planificadas "
+            f"(límite {formato_horas(limite)}h)"
+        ),
+        "codigo": "sobrecarga_diaria",
+        "conflicto": {
+            "fecha": fecha,
+            "horas_planificadas": f"{horas_planificadas:.2f}",
+            "limite_horas_dia": f"{limite:.2f}",
+            "excede_por": f"{horas_planificadas - limite:.2f}",
+            "horas_otras_gestiones": f"{otras_gestiones:.2f}",
+            "horas_gestion": f"{horas:.2f}",
+        },
+    }
+
+
 @api_view(["GET", "PUT", "PATCH"])
 def limite_diario(request):
     """
@@ -264,6 +336,12 @@ def subtarea_detail(request, pk):
     if request.method in ["PUT", "PATCH"]:
         serializer = SubtareaSerializer(subtarea, data=request.data, partial=True)
         if serializer.is_valid():
+            conflicto = detectar_sobrecarga(
+                organizador, subtarea, serializer.validated_data
+            )
+            if conflicto:
+                return Response(conflicto, status=status.HTTP_409_CONFLICT)
+
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
