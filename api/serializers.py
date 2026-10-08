@@ -1,5 +1,31 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from .models import Evento, Subtarea
+
+LIMITE_MINIMO = Decimal("1")
+LIMITE_MAXIMO = Decimal("16")
+MENSAJE_RANGO_LIMITE = "El límite debe estar entre 1 y 16 horas por día."
+MENSAJE_LIMITE_INVALIDO = "Escribe el límite como un número de horas, por ejemplo 6 o 4.5."
+
+
+class LimiteDiarioSerializer(serializers.Serializer):
+    limite_horas_dia = serializers.DecimalField(
+        max_digits=4,
+        decimal_places=2,
+        min_value=LIMITE_MINIMO,
+        max_value=LIMITE_MAXIMO,
+        error_messages={
+            "required": "Este campo es obligatorio.",
+            "null": "Este campo es obligatorio.",
+            "invalid": MENSAJE_LIMITE_INVALIDO,
+            "min_value": MENSAJE_RANGO_LIMITE,
+            "max_value": MENSAJE_RANGO_LIMITE,
+            "max_digits": MENSAJE_RANGO_LIMITE,
+            "max_whole_digits": MENSAJE_RANGO_LIMITE,
+            "max_decimal_places": "El límite admite máximo dos decimales.",
+        },
+    )
 
 
 class SubtareaSerializer(serializers.ModelSerializer):
