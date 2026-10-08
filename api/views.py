@@ -7,7 +7,7 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
 
 from .models import Organizador, Evento, Subtarea
-from .serializers import EventoSerializer, SubtareaSerializer
+from .serializers import EventoSerializer, LimiteDiarioSerializer, SubtareaSerializer
 
 
 @api_view(["GET"])
@@ -140,6 +140,31 @@ def organizador_me(request):
         "nombre": organizador.nombre,
         "email": organizador.email
     })
+
+
+@api_view(["GET", "PUT", "PATCH"])
+def limite_diario(request):
+    """
+    Límite de horas de gestión por día del organizador autenticado.
+
+    GET devuelve el límite actual (6 si nunca lo ha cambiado).
+    PUT/PATCH lo actualiza; solo acepta valores entre 1 y 16.
+    """
+    organizador, error = obtener_organizador_autenticado(request)
+    if error:
+        return error
+
+    if request.method == "GET":
+        serializer = LimiteDiarioSerializer(organizador)
+        return Response(serializer.data)
+
+    serializer = LimiteDiarioSerializer(data=request.data)
+    if serializer.is_valid():
+        organizador.limite_horas_dia = serializer.validated_data["limite_horas_dia"]
+        organizador.save(update_fields=["limite_horas_dia"])
+        return Response(LimiteDiarioSerializer(organizador).data)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(["GET", "POST"])

@@ -7,6 +7,7 @@ class Organizador(models.Model):
     nombre = models.TextField()
     email = models.TextField(unique=True, null=True, blank=True)
     password_hash = models.TextField(null=True, blank=True)
+    limite_horas_dia = models.DecimalField(max_digits=4, decimal_places=2, default=6)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

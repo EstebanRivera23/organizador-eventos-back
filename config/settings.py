@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import sys
 import dj_database_url
 from dotenv import load_dotenv
 
@@ -68,7 +69,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL:
+# Las pruebas nunca tocan la base real: siempre corren sobre SQLite.
+EJECUTANDO_PRUEBAS = "test" in sys.argv
+
+if DATABASE_URL and not EJECUTANDO_PRUEBAS:
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
@@ -85,6 +89,8 @@ else:
     }
 
 AUTH_PASSWORD_VALIDATORS = []
+
+TEST_RUNNER = "config.test_runner.TablasLocalesTestRunner"
 
 LANGUAGE_CODE = 'es-co'
 
