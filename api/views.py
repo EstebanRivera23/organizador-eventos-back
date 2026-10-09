@@ -219,9 +219,9 @@ def organizador_me(request):
 
 
 def formato_horas(horas):
-    """7.00 -> "7", 7.50 -> "7.5": así se muestran las horas en los mensajes."""
+    """7.00 -> "7", 7.50 -> "7,5": así se muestran las horas en los mensajes."""
     texto = f"{horas:.2f}".rstrip("0").rstrip(".")
-    return texto or "0"
+    return (texto or "0").replace(".", ",")
 
 
 def esta_finalizada(estado):
@@ -291,6 +291,7 @@ def fecha_para_posponer(organizador, subtarea, fecha, horas):
     """
     Primer día después de `fecha` en el que la gestión cabe sin pasar el
     límite diario. No va más allá del día del evento; si no hay, None.
+    Tampoco propone el día en que la gestión ya está: eso no cambia nada.
     """
     dia_del_evento = timezone.localtime(subtarea.evento.fecha_hora).date()
     candidata = max(fecha + timedelta(days=1), timezone.localdate())
@@ -304,7 +305,7 @@ def fecha_para_posponer(organizador, subtarea, fecha, horas):
 
     while candidata <= dia_del_evento:
         horas_planificadas = carga.get(candidata, Decimal("0")) + horas
-        if horas_planificadas <= limite:
+        if horas_planificadas <= limite and candidata != subtarea.fecha_objetivo:
             return {
                 "fecha": candidata,
                 "horas_planificadas": f"{horas_planificadas:.2f}",
