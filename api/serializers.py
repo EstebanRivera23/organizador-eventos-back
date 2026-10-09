@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from rest_framework import serializers
+from .estados import MENSAJE_ESTADO_INVALIDO, normalizar_estado
 from .models import Evento, Subtarea
 
 LIMITE_MINIMO = Decimal("1")
@@ -87,6 +88,12 @@ class SubtareaSerializer(serializers.ModelSerializer):
                 "Las horas estimadas deben ser mayores a 0."
             )
         return value
+
+    def validate_estado(self, value):
+        estado = normalizar_estado(value)
+        if estado is None:
+            raise serializers.ValidationError(MENSAJE_ESTADO_INVALIDO)
+        return estado
 
 
 class EventoSerializer(serializers.ModelSerializer):

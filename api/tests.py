@@ -534,3 +534,116 @@ class LoginTests(APITestCase):
     def test_campos_obligatorios(self):
         self.assertIn("email", self.entrar("", "secreto123").data)
         self.assertIn("password", self.entrar("ana@correo.com", "").data)
+
+
+class FiltrosHoyTests(ApiTestCase):
+    """US-05: filtrar la vista Hoy por evento o por estado."""
+
+    def setUp(self):
+        self.entrar("prueba1@correo.com")
+        hoy = timezone.localdate()
+        self.boda = self.crear_evento("Boda de prueba")
+        self.cumple = self.crear_evento("Cumpleaños de prueba")
+        self.salon = self.crear_gestion(self.boda, "Reservar salón", hoy - timedelta(days=2), 2)
+        self.catering = self.crear_gestion(self.boda, "Confirmar catering", hoy, 3, estado="en curso")
+        self.torta = self.crear_gestion(self.cumple, "Comprar la torta", hoy, 1)
+        self.sonido = self.crear_gestion(self.cumple, "Contratar sonido", hoy + timedelta(days=3), 2, estado="en curso")
+
+    def ids(self, respuesta):
+        return {
+            grupo: [g["id"] for g in respuesta.data[grupo]]
+            for grupo in ("vencidas", "para_hoy", "proximas")
+        }
+
+    def test_sin_filtros_trae_todo(self):
+        respuesta = self.client.get("/api/subtareas/hoy/")
+
+        self.assertEqual(
+            self.ids(respuesta),
+            {"vencidas": [self.salon], "para_hoy": [self.torta, self.catering], "proximas": [self.sonido]},
+        )
+
+    def test_filtra_por_evento_y_mantiene_los_grupos(self):
+        respuesta = self.client.get(f"/api/subtareas/hoy/?evento_id={self.boda}")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(
+            self.ids(respuesta),
+            {"vencidas": [self.salon], "para_hoy": [self.catering], "proximas": []},
+        )
+
+    def test_filtra_por_estado(self):
+        respuesta = self.client.get("/api/subtareas/hoy/?estado=en curso")
+
+        self.assertEqual(
+            self.ids(respuesta),
+            {"vencidas": [], "para_hoy": [self.catering], "proximas": [self.sonido]},
+        )
+
+    def test_filtra_por_evento_y_estado_a_la_vez(self):
+        respuesta = self.client.get(
+            f"/api/subtareas/hoy/?evento_id={self.cumple}&estado=por hacer"
+        )
+
+        self.assertEqual(
+            self.ids(respuesta), {"vencidas": [], "para_hoy": [self.torta], "proximas": []}
+        )
+
+    def test_el_filtro_encuentra_las_gestiones_guardadas_con_el_nombre_viejo(self):
+        Subtarea.objects.filter(pk=self.salon).update(estado="pendiente")
+        Subtarea.objects.filter(pk=self.sonido).update(estado="en_progreso")
+
+        por_hacer = self.client.get("/api/subtareas/hoy/?estado=por hacer")
+        en_curso = self.client.get("/api/subtareas/hoy/?estado=en curso")
+
+        self.assertIn(self.salon, self.ids(por_hacer)["vencidas"])
+        self.assertIn(self.sonido, self.ids(en_curso)["proximas"])
+
+    def test_el_filtro_acepta_el_nombre_viejo_del_estado(self):
+        respuesta = self.client.get("/api/subtareas/hoy/?estado=en_progreso")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(self.ids(respuesta)["para_hoy"], [self.catering])
+
+    def test_estado_que_no_existe_responde_400(self):
+        respuesta = self.client.get("/api/subtareas/hoy/?estado=volando")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("Estado inválido", respuesta.data["estado"][0])
+
+    def test_evento_de_otro_organizador_responde_404(self):
+        self.entrar("prueba2@correo.com")
+
+        respuesta = self.client.get(f"/api/subtareas/hoy/?evento_id={self.boda}")
+
+        self.assertEqual(respuesta.status_code, 404)
+
+
+class EstadosDeGestionTests(ApiTestCase):
+    def setUp(self):
+        self.entrar("prueba1@correo.com")
+        self.evento = self.crear_evento()
+
+    def test_al_crear_se_guarda_con_el_nombre_actual(self):
+        vieja = self.crear_gestion(self.evento, "Reservar salón", DIA_X, 1, estado="pendiente")
+        otra = self.crear_gestion(self.evento, "Confirmar catering", DIA_X, 1, estado="en_progreso")
+
+        self.assertEqual(Subtarea.objects.get(pk=vieja).estado, "por hacer")
+        self.assertEqual(Subtarea.objects.get(pk=otra).estado, "en curso")
+
+    def test_al_editar_tambien(self):
+        gestion = self.crear_gestion(self.evento, "Reservar salón", DIA_X, 1)
+
+        respuesta = self.cambiar_gestion(gestion, estado="En_Progreso")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["estado"], "en curso")
+
+    def test_estado_desconocido_no_se_guarda(self):
+        gestion = self.crear_gestion(self.evento, "Reservar salón", DIA_X, 1)
+
+        respuesta = self.cambiar_gestion(gestion, estado="volando")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("Estado inválido", respuesta.data["estado"][0])
+        self.assertEqual(Subtarea.objects.get(pk=gestion).estado, "por hacer")

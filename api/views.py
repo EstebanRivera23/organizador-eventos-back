@@ -1,7 +1,7 @@
 ﻿from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view
@@ -14,6 +14,7 @@ from django.db import IntegrityError
 from drf_spectacular.utils import extend_schema
 
 from . import documentacion as doc
+from .estados import MENSAJE_ESTADO_INVALIDO, formas_de, normalizar_estado
 from .models import Organizador, Evento, Subtarea
 from .serializers import (
     EventoSerializer,
@@ -711,19 +712,19 @@ def subtareas_hoy(request):
 
     # Filtro por estado
     if estado:
-        estados_validos = ["por hacer", "en curso", "finalizado"]
+        estado_pedido = normalizar_estado(estado)
 
-        if estado.lower() not in estados_validos:
+        if estado_pedido is None:
             return Response(
-                {
-                    "estado": [
-                        "Estado invalido. Use: por hacer, en curso o finalizado."
-                    ]
-                },
+                {"estado": [MENSAJE_ESTADO_INVALIDO]},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        subtareas_base = subtareas_base.filter(estado__iexact=estado)
+        # Incluye las gestiones guardadas con los nombres viejos del estado.
+        coincide = Q()
+        for forma in formas_de(estado_pedido):
+            coincide |= Q(estado__iexact=forma)
+        subtareas_base = subtareas_base.filter(coincide)
 
     vencidas = subtareas_base.filter(
         fecha_objetivo__lt=hoy
