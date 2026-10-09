@@ -250,7 +250,7 @@ EJEMPLO_HOY = OpenApiExample(
         "fecha_actual": "2026-10-09",
         "filtros": {"evento_id": None, "estado": None},
         "regla": (
-            "Se muestran primero las de hoy, luego las vencidas y después las "
+            "Se muestran primero las vencidas, luego las de hoy y después las "
             "próximas. Dentro de cada grupo van por fecha objetivo y, si empatan, "
             "primero la de menor esfuerzo estimado."
         ),

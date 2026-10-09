@@ -560,7 +560,7 @@ class FiltrosHoyTests(ApiTestCase):
 
         self.assertTrue(
             respuesta.data["regla"].startswith(
-                "Se muestran primero las de hoy, luego las vencidas"
+                "Se muestran primero las vencidas, luego las de hoy"
             )
         )
 
