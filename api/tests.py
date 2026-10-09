@@ -11,11 +11,17 @@ URL_LIMITE = "/api/organizador/limite-diario/"
 
 class ApiTestCase(APITestCase):
     def entrar(self, email):
-        """Crea la cuenta (o entra) y deja el token puesto en el cliente."""
-        respuesta = self.client.post(
-            "/api/login/", {"email": email, "password": "prueba123"}, format="json"
-        )
-        self.assertEqual(respuesta.status_code, 200)
+        """Crea la cuenta (o entra si ya existe) y deja el token en el cliente."""
+        self.client.credentials()
+        datos = {"email": email, "password": "prueba123"}
+        if not Organizador.objects.filter(email=email).exists():
+            respuesta = self.client.post(
+                "/api/registro/", {**datos, "nombre": "Organizador de prueba"}, format="json"
+            )
+            self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        else:
+            respuesta = self.client.post("/api/login/", datos, format="json")
+            self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {respuesta.data['token']}")
         return Organizador.objects.get(email=email)
 
@@ -419,3 +425,112 @@ class DocumentacionTests(APITestCase):
 
     def test_la_pagina_de_swagger_abre_sin_sesion(self):
         self.assertEqual(self.client.get("/api/docs/").status_code, 200)
+
+
+CUENTA = {"nombre": "Ana Gómez", "email": "ana@correo.com", "password": "secreto123"}
+
+
+class RegistroTests(APITestCase):
+    def registrar(self, **cambios):
+        return self.client.post("/api/registro/", {**CUENTA, **cambios}, format="json")
+
+    def test_crea_la_cuenta_y_deja_la_sesion_iniciada(self):
+        respuesta = self.registrar()
+
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(respuesta.data["organizador"]["nombre"], "Ana Gómez")
+        self.assertEqual(respuesta.data["organizador"]["email"], "ana@correo.com")
+        self.assertNotIn("password", respuesta.data["organizador"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {respuesta.data['token']}")
+        self.assertEqual(self.client.get("/api/organizador/me/").data["email"], "ana@correo.com")
+        self.assertEqual(
+            Decimal(self.client.get(URL_LIMITE).data["limite_horas_dia"]), Decimal("6")
+        )
+
+    def test_la_contrasena_no_se_guarda_en_texto(self):
+        self.registrar()
+
+        guardada = Organizador.objects.get(email="ana@correo.com").password_hash
+        self.assertNotEqual(guardada, "secreto123")
+        self.assertNotIn("secreto123", guardada)
+
+    def test_el_correo_se_guarda_en_minusculas(self):
+        respuesta = self.registrar(email="  Ana@Correo.COM ")
+
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertTrue(Organizador.objects.filter(email="ana@correo.com").exists())
+
+    def test_correo_repetido_no_crea_otra_cuenta(self):
+        self.registrar()
+
+        respuesta = self.registrar(email="ANA@correo.com", nombre="Otra persona")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.data["email"], ["Ya existe una cuenta con este correo."])
+        self.assertEqual(Organizador.objects.count(), 1)
+        self.assertEqual(Organizador.objects.get().nombre, "Ana Gómez")
+
+    def test_campos_obligatorios(self):
+        respuesta = self.client.post("/api/registro/", {}, format="json")
+
+        self.assertEqual(respuesta.status_code, 400)
+        for campo in ("nombre", "email", "password"):
+            self.assertEqual(respuesta.data[campo], ["Este campo es obligatorio."])
+        self.assertEqual(Organizador.objects.count(), 0)
+
+    def test_validaciones_de_cada_campo(self):
+        casos = [
+            ({"nombre": "   "}, "nombre", "Este campo es obligatorio."),
+            ({"email": "ana-sin-arroba"}, "email", "Escribe un correo válido"),
+            ({"password": "12345"}, "password", "al menos 6 caracteres"),
+        ]
+        for cambios, campo, mensaje in casos:
+            respuesta = self.registrar(**cambios)
+            self.assertEqual(respuesta.status_code, 400, cambios)
+            self.assertIn(mensaje, respuesta.data[campo][0])
+        self.assertEqual(Organizador.objects.count(), 0)
+
+
+class LoginTests(APITestCase):
+    def setUp(self):
+        self.client.post("/api/registro/", CUENTA, format="json")
+
+    def entrar(self, email, password):
+        return self.client.post(
+            "/api/login/", {"email": email, "password": password}, format="json"
+        )
+
+    def test_entra_con_la_cuenta_registrada(self):
+        respuesta = self.entrar("Ana@correo.com", "secreto123")
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["organizador"]["nombre"], "Ana Gómez")
+        self.assertTrue(respuesta.data["token"])
+
+    def test_un_correo_sin_cuenta_ya_no_crea_la_cuenta(self):
+        respuesta = self.entrar("nuevo@correo.com", "secreto123")
+
+        self.assertEqual(respuesta.status_code, 401)
+        self.assertEqual(respuesta.data["detail"], "Credenciales inválidas.")
+        self.assertFalse(Organizador.objects.filter(email="nuevo@correo.com").exists())
+
+    def test_no_revela_si_el_correo_existe(self):
+        mala_clave = self.entrar("ana@correo.com", "otra-clave")
+        sin_cuenta = self.entrar("nadie@correo.com", "otra-clave")
+
+        self.assertEqual(mala_clave.status_code, 401)
+        self.assertEqual(mala_clave.status_code, sin_cuenta.status_code)
+        self.assertEqual(mala_clave.data, sin_cuenta.data)
+
+    def test_una_cuenta_sin_contrasena_no_se_puede_tomar(self):
+        Organizador.objects.create(nombre="Cuenta vieja", email="vieja@correo.com")
+
+        respuesta = self.entrar("vieja@correo.com", "cualquiera123")
+
+        self.assertEqual(respuesta.status_code, 401)
+        self.assertFalse(Organizador.objects.get(email="vieja@correo.com").password_hash)
+
+    def test_campos_obligatorios(self):
+        self.assertIn("email", self.entrar("", "secreto123").data)
+        self.assertIn("password", self.entrar("ana@correo.com", "").data)

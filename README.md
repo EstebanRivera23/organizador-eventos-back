@@ -44,11 +44,12 @@ Corren sobre una base temporal, no tocan la de Supabase.
 
 ## Endpoints
 
-El detalle de cada uno, con ejemplos, está en Swagger. Todos menos `health` y `login` piden el encabezado `Authorization: Bearer <token>`.
+El detalle de cada uno, con ejemplos, está en Swagger. Todos menos `health`, `registro` y `login` piden el encabezado `Authorization: Bearer <token>`.
 
 | Método | Ruta | Qué hace |
 | --- | --- | --- |
 | GET | `/api/health/` | Comprueba que la API está viva |
+| POST | `/api/registro/` | Crea una cuenta y devuelve el token |
 | POST | `/api/login/` | Inicia sesión y devuelve el token |
 | GET | `/api/organizador/me/` | Datos del organizador |
 | GET, PUT | `/api/organizador/limite-diario/` | Ver o cambiar el límite diario de horas (6 por defecto, de 1 a 16) |

@@ -9,12 +9,18 @@ from rest_framework.response import Response
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
+from django.db import IntegrityError
 
 from drf_spectacular.utils import extend_schema
 
 from . import documentacion as doc
 from .models import Organizador, Evento, Subtarea
-from .serializers import EventoSerializer, LimiteDiarioSerializer, SubtareaSerializer
+from .serializers import (
+    EventoSerializer,
+    LimiteDiarioSerializer,
+    RegistroSerializer,
+    SubtareaSerializer,
+)
 
 
 @extend_schema(
@@ -71,12 +77,76 @@ def obtener_organizador_autenticado(request):
     return organizador, None
 
 
+def sesion_de(organizador, mensaje):
+    """Lo que se le devuelve al front cuando alguien entra: token y perfil."""
+    token = signing.dumps(
+        str(organizador.id),
+        salt="organizador-login"
+    )
+
+    return {
+        "message": mensaje,
+        "token": token,
+        "organizador": {
+            "id": str(organizador.id),
+            "nombre": organizador.nombre,
+            "email": organizador.email
+        }
+    }
+
+
+CORREO_YA_REGISTRADO = {"email": ["Ya existe una cuenta con este correo."]}
+
+
+@extend_schema(
+    tags=["Sesión"],
+    summary="Crear una cuenta",
+    description=(
+        "Registra un organizador nuevo y lo deja con la sesión iniciada: "
+        "devuelve el mismo token que el login."
+    ),
+    auth=[],
+    request=RegistroSerializer,
+    responses={201: doc.SesionSerializer, 400: doc.DATOS_INVALIDOS},
+    examples=[
+        doc.EJEMPLO_REGISTRO,
+        doc.EJEMPLO_CUENTA_CREADA,
+        doc.EJEMPLO_CORREO_REPETIDO,
+    ],
+)
+@api_view(["POST"])
+def registro(request):
+    serializer = RegistroSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    datos = serializer.validated_data
+    if Organizador.objects.filter(email=datos["email"]).exists():
+        return Response(CORREO_YA_REGISTRADO, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        organizador = Organizador.objects.create(
+            nombre=datos["nombre"],
+            email=datos["email"],
+            password_hash=make_password(datos["password"]),
+        )
+    except IntegrityError:
+        # Dos registros con el mismo correo al mismo tiempo.
+        return Response(CORREO_YA_REGISTRADO, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(
+        sesion_de(organizador, "Cuenta creada"),
+        status=status.HTTP_201_CREATED
+    )
+
+
 @extend_schema(
     tags=["Sesión"],
     summary="Iniciar sesión",
     description=(
         "Devuelve el token que se manda en las demás peticiones como "
-        "`Authorization: Bearer <token>`. Dura 8 horas."
+        "`Authorization: Bearer <token>`. Dura 8 horas. Solo entran las "
+        "cuentas creadas en el registro."
     ),
     auth=[],
     request=doc.LoginSerializer,
@@ -90,13 +160,13 @@ def obtener_organizador_autenticado(request):
 @api_view(["POST"])
 def login(request):
     """
-    Login con email y contraseña para Sprint 2.
+    Inicia sesión con correo y contraseña. Solo entran las cuentas que ya
+    están registradas.
 
-    Si el email no existe, registra el organizador con la contraseña enviada.
-    Si el email existe, valida la contraseña.
+    Si el correo no existe o la contraseña no es, responde lo mismo, para no
+    revelar qué correos tienen cuenta.
     """
     email = str(request.data.get("email", "")).strip().lower()
-    nombre = str(request.data.get("nombre", "")).strip()
     password = str(request.data.get("password", "")).strip()
 
     if not email:
@@ -111,51 +181,22 @@ def login(request):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    if len(password) < 6:
-        return Response(
-            {"password": ["La contraseña debe tener al menos 6 caracteres."]},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-    if not nombre:
-        nombre = email.split("@")[0]
-
     organizador = Organizador.objects.filter(email=email).first()
 
-    if organizador is None:
-        organizador = Organizador.objects.create(
-            email=email,
-            nombre=nombre,
-            password_hash=make_password(password)
+    if (
+        organizador is None
+        or not organizador.password_hash
+        or not check_password(password, organizador.password_hash)
+    ):
+        return Response(
+            {"detail": "Credenciales inválidas."},
+            status=status.HTTP_401_UNAUTHORIZED
         )
-    else:
-        if not organizador.password_hash:
-            organizador.password_hash = make_password(password)
-            organizador.save(update_fields=["password_hash"])
-        elif not check_password(password, organizador.password_hash):
-            return Response(
-                {"detail": "Credenciales inválidas."},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
 
-        if nombre and organizador.nombre != nombre:
-            organizador.nombre = nombre
-            organizador.save(update_fields=["nombre"])
-
-    token = signing.dumps(
-        str(organizador.id),
-        salt="organizador-login"
+    return Response(
+        sesion_de(organizador, "Login correcto"),
+        status=status.HTTP_200_OK
     )
-
-    return Response({
-        "message": "Login correcto",
-        "token": token,
-        "organizador": {
-            "id": str(organizador.id),
-            "nombre": organizador.nombre,
-            "email": organizador.email
-        }
-    }, status=status.HTTP_200_OK)
 
 
 @extend_schema(
