@@ -1,4 +1,5 @@
-﻿from decimal import Decimal
+﻿from datetime import timedelta
+from decimal import Decimal
 
 from django.db.models import Sum
 from django.utils import timezone
@@ -155,6 +156,75 @@ def esta_finalizada(estado):
     return str(estado).strip().lower() == "finalizado"
 
 
+DIAS_PARA_SUGERIR = 14
+MAXIMO_FECHAS_SUGERIDAS = 3
+
+
+def horas_por_dia(organizador, desde, hasta, sin_subtarea=None):
+    """
+    Horas de gestión sin finalizar del organizador en cada día del rango,
+    sumando todos sus eventos. Los días sin gestiones no aparecen.
+    """
+    gestiones = Subtarea.objects.filter(
+        evento__organizador=organizador,
+        fecha_objetivo__range=(desde, hasta),
+    ).exclude(estado__iexact="finalizado")
+
+    if sin_subtarea is not None:
+        gestiones = gestiones.exclude(pk=sin_subtarea.pk)
+
+    filas = gestiones.values("fecha_objetivo").annotate(total=Sum("horas_estimadas"))
+    return {fila["fecha_objetivo"]: fila["total"] for fila in filas}
+
+
+def sugerir_fechas(organizador, subtarea, fecha, horas):
+    """
+    Días más cercanos a `fecha` en los que la gestión sí cabe sin pasar el
+    límite diario. No sugiere días que ya pasaron ni posteriores al evento.
+    """
+    hoy = timezone.localdate()
+    dia_del_evento = timezone.localtime(subtarea.evento.fecha_hora).date()
+    limite = organizador.limite_horas_dia
+    carga = horas_por_dia(
+        organizador,
+        fecha - timedelta(days=DIAS_PARA_SUGERIR),
+        fecha + timedelta(days=DIAS_PARA_SUGERIR),
+        sin_subtarea=subtarea,
+    )
+
+    sugeridas = []
+    for distancia in range(1, DIAS_PARA_SUGERIR + 1):
+        for candidata in (
+            fecha + timedelta(days=distancia),
+            fecha - timedelta(days=distancia),
+        ):
+            if candidata < hoy or candidata > dia_del_evento:
+                continue
+
+            horas_planificadas = carga.get(candidata, Decimal("0")) + horas
+            if horas_planificadas <= limite:
+                sugeridas.append({
+                    "fecha": candidata,
+                    "horas_planificadas": f"{horas_planificadas:.2f}",
+                })
+
+        if len(sugeridas) >= MAXIMO_FECHAS_SUGERIDAS:
+            break
+
+    sugeridas = sugeridas[:MAXIMO_FECHAS_SUGERIDAS]
+    return sorted(sugeridas, key=lambda sugerida: sugerida["fecha"])
+
+
+def carga_del_dia(organizador, fecha):
+    """Cómo queda el día después de guardar: horas planificadas y límite."""
+    horas = horas_por_dia(organizador, fecha, fecha).get(fecha, Decimal("0"))
+    return {
+        "fecha": fecha,
+        "horas_planificadas": f"{horas:.2f}",
+        "limite_horas_dia": f"{organizador.limite_horas_dia:.2f}",
+    }
+
+
 def detectar_sobrecarga(organizador, subtarea, cambios):
     """
     Revisa si guardar los cambios deja el día por encima del límite diario.
@@ -180,16 +250,9 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
     if horas <= horas_antes:
         return None
 
-    otras_gestiones = (
-        Subtarea.objects.filter(
-            evento__organizador=organizador,
-            fecha_objetivo=fecha,
-        )
-        .exclude(estado__iexact="finalizado")
-        .exclude(pk=subtarea.pk)
-        .aggregate(total=Sum("horas_estimadas"))["total"]
-        or Decimal("0")
-    )
+    otras_gestiones = horas_por_dia(
+        organizador, fecha, fecha, sin_subtarea=subtarea
+    ).get(fecha, Decimal("0"))
 
     limite = organizador.limite_horas_dia
     horas_planificadas = otras_gestiones + horas
@@ -210,6 +273,8 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
             "excede_por": f"{horas_planificadas - limite:.2f}",
             "horas_otras_gestiones": f"{otras_gestiones:.2f}",
             "horas_gestion": f"{horas:.2f}",
+            "horas_disponibles": f"{max(limite - otras_gestiones, Decimal('0')):.2f}",
+            "fechas_sugeridas": sugerir_fechas(organizador, subtarea, fecha, horas),
         },
     }
 
@@ -342,8 +407,11 @@ def subtarea_detail(request, pk):
             if conflicto:
                 return Response(conflicto, status=status.HTTP_409_CONFLICT)
 
-            serializer.save()
-            return Response(serializer.data)
+            subtarea = serializer.save()
+            return Response({
+                **serializer.data,
+                "carga_dia": carga_del_dia(organizador, subtarea.fecha_objetivo),
+            })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == "DELETE":

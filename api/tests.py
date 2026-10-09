@@ -19,14 +19,14 @@ class ApiTestCase(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {respuesta.data['token']}")
         return Organizador.objects.get(email=email)
 
-    def crear_evento(self, nombre="Boda de prueba"):
+    def crear_evento(self, nombre="Boda de prueba", dia="2030-01-15"):
         respuesta = self.client.post(
             "/api/eventos/",
             {
                 "nombre": nombre,
                 "tipo": "boda",
                 "cliente_contacto": "Cliente de prueba",
-                "fecha_hora": "2030-01-15T18:00:00-05:00",
+                "fecha_hora": f"{dia}T18:00:00-05:00",
                 "lugar": "Salón de prueba",
             },
             format="json",
@@ -290,3 +290,119 @@ class SobrecargaDiariaTests(ApiTestCase):
 
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("fecha_objetivo", respuesta.data)
+
+
+class ResolucionDeConflictoTests(ApiTestCase):
+    """KAN-50: lo que trae el 409 para resolver, y la carga recalculada."""
+
+    def setUp(self):
+        self.entrar("prueba1@correo.com")
+        # El evento es el 15 de enero: no se sugieren días después.
+        self.evento = self.crear_evento()
+
+    def fechas(self, respuesta):
+        return [str(s["fecha"]) for s in respuesta.data["conflicto"]["fechas_sugeridas"]]
+
+    def test_sugiere_los_dias_mas_cercanos_donde_cabe(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+
+        self.assertEqual(respuesta.status_code, 409)
+        # A un día de distancia están el 9 y el 11; a dos, el 12 (va primero el día posterior).
+        self.assertEqual(self.fechas(respuesta), ["2030-01-09", "2030-01-11", "2030-01-12"])
+        self.assertEqual(
+            respuesta.data["conflicto"]["fechas_sugeridas"][0]["horas_planificadas"], "2.00"
+        )
+        self.assertEqual(respuesta.data["conflicto"]["horas_disponibles"], "1.00")
+
+    def test_no_sugiere_dias_que_tambien_quedarian_llenos(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        self.crear_gestion(self.evento, "Confirmar catering", date(2030, 1, 11), 5)
+        self.crear_gestion(self.evento, "Enviar invitaciones", date(2030, 1, 9), 4)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+
+        # El 11 no cabe (5 + 2); el 9 sí, justo en el límite (4 + 2).
+        self.assertEqual(self.fechas(respuesta), ["2030-01-08", "2030-01-09", "2030-01-12"])
+        sugeridas = respuesta.data["conflicto"]["fechas_sugeridas"]
+        self.assertEqual(sugeridas[1]["horas_planificadas"], "6.00")
+
+    def test_no_sugiere_dias_despues_del_evento(self):
+        self.crear_gestion(self.evento, "Reservar salón", date(2030, 1, 15), 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=date(2030, 1, 15))
+
+        self.assertEqual(self.fechas(respuesta), ["2030-01-12", "2030-01-13", "2030-01-14"])
+
+    def test_no_sugiere_dias_que_ya_pasaron(self):
+        hoy = timezone.localdate()
+        evento = self.crear_evento("Cumpleaños de prueba", dia=str(hoy + timedelta(days=20)))
+        self.crear_gestion(evento, "Reservar salón", hoy, 5)
+        proveedores = self.crear_gestion(evento, "Buscar proveedores", hoy + timedelta(days=5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=hoy)
+
+        esperadas = [str(hoy + timedelta(days=d)) for d in (1, 2, 3)]
+        self.assertEqual(self.fechas(respuesta), esperadas)
+
+    def test_sin_sugerencias_si_la_gestion_sola_pasa_el_limite(self):
+        self.client.put(URL_LIMITE, {"limite_horas_dia": 2}, format="json")
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 1)
+        grande = self.crear_gestion(self.evento, "Montaje completo", date(2030, 1, 5), 3)
+
+        respuesta = self.cambiar_gestion(grande, fecha_objetivo=DIA_X)
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(respuesta.data["conflicto"]["fechas_sugeridas"], [])
+        self.assertEqual(respuesta.data["conflicto"]["horas_disponibles"], "1.00")
+
+    def test_dia_lleno_tiene_cero_horas_disponibles(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 4)
+        self.crear_gestion(self.evento, "Confirmar catering", DIA_X, 3)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+
+        self.assertEqual(respuesta.data["conflicto"]["horas_disponibles"], "0.00")
+
+    def test_mover_a_una_fecha_sugerida_resuelve_y_devuelve_la_carga(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+        conflicto = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+        sugerida = self.fechas(conflicto)[0]
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=sugerida)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(str(respuesta.data["fecha_objetivo"]), sugerida)
+        self.assertEqual(str(respuesta.data["carga_dia"]["fecha"]), sugerida)
+        self.assertEqual(respuesta.data["carga_dia"]["horas_planificadas"], "2.00")
+        self.assertEqual(respuesta.data["carga_dia"]["limite_horas_dia"], "6.00")
+
+    def test_reducir_resuelve_y_devuelve_la_carga_del_dia(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(
+            proveedores, fecha_objetivo=DIA_X, horas_estimadas=1
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["carga_dia"]["horas_planificadas"], "6.00")
+
+    def test_reducir_poco_sigue_en_conflicto_con_cifras_nuevas(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(
+            proveedores, fecha_objetivo=DIA_X, horas_estimadas=1.5
+        )
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(
+            respuesta.data["detail"], "Quedarías con 6.5h planificadas (límite 6h)"
+        )
