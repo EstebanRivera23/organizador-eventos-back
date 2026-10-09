@@ -406,3 +406,16 @@ class ResolucionDeConflictoTests(ApiTestCase):
         self.assertEqual(
             respuesta.data["detail"], "Quedarías con 6.5h planificadas (límite 6h)"
         )
+
+
+class DocumentacionTests(APITestCase):
+    def test_el_esquema_incluye_los_endpoints_del_sprint_3(self):
+        respuesta = self.client.get("/api/schema/", HTTP_ACCEPT="application/json")
+
+        self.assertEqual(respuesta.status_code, 200)
+        rutas = respuesta.json()["paths"]
+        self.assertIn("/api/organizador/limite-diario/", rutas)
+        self.assertIn("409", rutas["/api/subtareas/{id}/"]["patch"]["responses"])
+
+    def test_la_pagina_de_swagger_abre_sin_sesion(self):
+        self.assertEqual(self.client.get("/api/docs/").status_code, 200)

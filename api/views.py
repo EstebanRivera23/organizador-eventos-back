@@ -10,16 +10,25 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
 
+from drf_spectacular.utils import extend_schema
+
+from . import documentacion as doc
 from .models import Organizador, Evento, Subtarea
 from .serializers import EventoSerializer, LimiteDiarioSerializer, SubtareaSerializer
 
 
+@extend_schema(
+    tags=["Estado"],
+    summary="Comprobar que la API está viva",
+    auth=[],
+    responses=doc.EstadoApiSerializer,
+)
 @api_view(["GET"])
 def health_check(request):
     return Response({
         "status": "ok",
         "message": "API funcionando correctamente",
-        "sprint": "Sprint 2",
+        "sprint": "Sprint 3",
         "framework": "Django REST Framework"
     })
 
@@ -62,6 +71,22 @@ def obtener_organizador_autenticado(request):
     return organizador, None
 
 
+@extend_schema(
+    tags=["Sesión"],
+    summary="Iniciar sesión",
+    description=(
+        "Devuelve el token que se manda en las demás peticiones como "
+        "`Authorization: Bearer <token>`. Dura 8 horas."
+    ),
+    auth=[],
+    request=doc.LoginSerializer,
+    responses={
+        200: doc.SesionSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.ErrorSerializer,
+    },
+    examples=[doc.EJEMPLO_LOGIN, doc.EJEMPLO_SESION, doc.EJEMPLO_CREDENCIALES],
+)
 @api_view(["POST"])
 def login(request):
     """
@@ -133,6 +158,11 @@ def login(request):
     }, status=status.HTTP_200_OK)
 
 
+@extend_schema(
+    tags=["Sesión"],
+    summary="Datos del organizador que tiene la sesión",
+    responses={200: doc.OrganizadorSerializer, 401: doc.NO_AUTENTICADO},
+)
 @api_view(["GET"])
 def organizador_me(request):
     organizador, error = obtener_organizador_autenticado(request)
@@ -279,6 +309,30 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
     }
 
 
+@extend_schema(
+    methods=["GET"],
+    tags=["Límite diario"],
+    summary="Ver el límite diario de horas",
+    description="Si el organizador nunca lo ha cambiado, responde 6.",
+    responses={200: LimiteDiarioSerializer, 401: doc.NO_AUTENTICADO},
+    examples=[doc.EJEMPLO_LIMITE],
+)
+@extend_schema(
+    methods=["PUT", "PATCH"],
+    tags=["Límite diario"],
+    summary="Cambiar el límite diario de horas",
+    description=(
+        "Solo acepta valores entre 1 y 16. El límite es de cada organizador y "
+        "se usa desde ese momento para detectar la sobrecarga al reprogramar."
+    ),
+    request=LimiteDiarioSerializer,
+    responses={
+        200: LimiteDiarioSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+    },
+    examples=[doc.EJEMPLO_LIMITE, doc.EJEMPLO_LIMITE_FUERA_DE_RANGO],
+)
 @api_view(["GET", "PUT", "PATCH"])
 def limite_diario(request):
     """
@@ -304,6 +358,25 @@ def limite_diario(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    methods=["GET"],
+    tags=["Eventos"],
+    operation_id="eventos_listar",
+    summary="Listar los eventos del organizador",
+    responses={200: EventoSerializer(many=True), 401: doc.NO_AUTENTICADO},
+)
+@extend_schema(
+    methods=["POST"],
+    tags=["Eventos"],
+    operation_id="eventos_crear",
+    summary="Crear un evento",
+    request=EventoSerializer,
+    responses={
+        201: EventoSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+    },
+)
 @api_view(["GET", "POST"])
 def eventos_list_create(request):
     organizador, error = obtener_organizador_autenticado(request)
@@ -323,6 +396,40 @@ def eventos_list_create(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    methods=["GET"],
+    tags=["Eventos"],
+    operation_id="eventos_ver",
+    summary="Ver un evento con sus gestiones",
+    responses={
+        200: EventoSerializer,
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+)
+@extend_schema(
+    methods=["PUT", "PATCH"],
+    tags=["Eventos"],
+    summary="Editar un evento",
+    description="Se pueden mandar solo los campos que cambian.",
+    request=EventoSerializer,
+    responses={
+        200: EventoSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+)
+@extend_schema(
+    methods=["DELETE"],
+    tags=["Eventos"],
+    summary="Eliminar un evento con sus gestiones",
+    responses={
+        204: None,
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+)
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 def evento_detail(request, pk):
     organizador, error = obtener_organizador_autenticado(request)
@@ -353,6 +460,30 @@ def evento_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema(
+    methods=["GET"],
+    tags=["Gestiones"],
+    operation_id="gestiones_listar",
+    summary="Listar las gestiones de un evento",
+    responses={
+        200: SubtareaSerializer(many=True),
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+)
+@extend_schema(
+    methods=["POST"],
+    tags=["Gestiones"],
+    operation_id="gestiones_crear",
+    summary="Agregar una gestión a un evento",
+    request=SubtareaSerializer,
+    responses={
+        201: SubtareaSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+)
 @api_view(["GET", "POST"])
 def subtareas_by_evento(request, evento_id):
     organizador, error = obtener_organizador_autenticado(request)
@@ -380,6 +511,57 @@ def subtareas_by_evento(request, evento_id):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    methods=["GET"],
+    tags=["Gestiones"],
+    operation_id="gestiones_ver",
+    summary="Ver una gestión",
+    responses={
+        200: SubtareaSerializer,
+        401: doc.NO_AUTENTICADO,
+        404: doc.SUBTAREA_NO_ENCONTRADA,
+    },
+)
+@extend_schema(
+    methods=["PUT", "PATCH"],
+    tags=["Gestiones"],
+    summary="Editar o reprogramar una gestión",
+    description=(
+        "Se pueden mandar solo los campos que cambian. Para reprogramar se "
+        "manda `fecha_objetivo`.\n\n"
+        "Antes de guardar se suman las horas de las gestiones sin finalizar del "
+        "organizador para ese día, en todos sus eventos. Si el cambio le agrega "
+        "horas al día y el total pasa del límite diario, no guarda y responde "
+        "409 con las cifras, las horas que quedan libres ese día y hasta tres "
+        "fechas cercanas donde la gestión sí cabe.\n\n"
+        "El conflicto se resuelve con otra petición igual: con una fecha que "
+        "tenga espacio, o con la misma fecha y menos `horas_estimadas`."
+    ),
+    request=SubtareaSerializer,
+    responses={
+        200: doc.SubtareaGuardadaSerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+        404: doc.SUBTAREA_NO_ENCONTRADA,
+        409: doc.SobrecargaSerializer,
+    },
+    examples=[
+        doc.EJEMPLO_REPROGRAMAR,
+        doc.EJEMPLO_REDUCIR,
+        doc.EJEMPLO_GUARDADA,
+        doc.EJEMPLO_SOBRECARGA,
+    ],
+)
+@extend_schema(
+    methods=["DELETE"],
+    tags=["Gestiones"],
+    summary="Eliminar una gestión",
+    responses={
+        204: None,
+        401: doc.NO_AUTENTICADO,
+        404: doc.SUBTAREA_NO_ENCONTRADA,
+    },
+)
 @api_view(["GET", "PUT", "PATCH", "DELETE"])
 def subtarea_detail(request, pk):
     organizador, error = obtener_organizador_autenticado(request)
@@ -419,6 +601,24 @@ def subtarea_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema(
+    tags=["Gestiones"],
+    operation_id="gestiones_hoy",
+    summary="Gestiones para la vista Hoy",
+    description=(
+        "Gestiones sin finalizar del organizador, agrupadas en vencidas, para "
+        "hoy y próximas. Dentro de cada grupo van por fecha objetivo y, si "
+        "empatan, primero la de menos horas."
+    ),
+    parameters=doc.FILTROS_HOY,
+    responses={
+        200: doc.GestionesHoySerializer,
+        400: doc.DATOS_INVALIDOS,
+        401: doc.NO_AUTENTICADO,
+        404: doc.EVENTO_NO_ENCONTRADO,
+    },
+    examples=[doc.EJEMPLO_HOY],
+)
 @api_view(["GET"])
 def subtareas_hoy(request):
     """
