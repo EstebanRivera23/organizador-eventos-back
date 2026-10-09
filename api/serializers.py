@@ -1,6 +1,8 @@
 import re
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import validate_email
 from rest_framework import serializers
 from .estados import MENSAJE_ESTADO_INVALIDO, normalizar_estado
 from .models import Evento, Subtarea
@@ -103,21 +105,35 @@ TELEFONO_VALIDO = re.compile(r"^[\d\s+\-()]+$")
 
 class EventoSerializer(serializers.ModelSerializer):
     subtareas = SubtareaSerializer(many=True, read_only=True)
+    cliente_contacto = serializers.CharField(
+        read_only=True,
+        help_text="Nombre, teléfono y correo del cliente en un solo texto. Se arma solo.",
+    )
     cliente_nombre = serializers.CharField(
         allow_blank=True,
+        help_text="Nombre del cliente. Obligatorio.",
         error_messages={
             "required": "El nombre del cliente es obligatorio.",
             "null": "El nombre del cliente es obligatorio.",
         },
     )
     cliente_telefono = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    cliente_correo = serializers.EmailField(
         required=False,
         allow_blank=True,
         allow_null=True,
-        error_messages={"invalid": "Escribe un correo válido."},
+        help_text=(
+            "Teléfono del cliente, de 7 a 15 dígitos. Hace falta el teléfono "
+            "o el correo; basta con uno."
+        ),
+    )
+    cliente_correo = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text=(
+            "Correo del cliente. Hace falta el teléfono o el correo; basta "
+            "con uno."
+        ),
     )
 
     class Meta:
@@ -175,7 +191,15 @@ class EventoSerializer(serializers.ModelSerializer):
         return telefono
 
     def validate_cliente_correo(self, value):
-        return (value or "").strip()
+        correo = (value or "").strip()
+        if not correo:
+            return ""
+
+        try:
+            validate_email(correo)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Escribe un correo válido.")
+        return correo
 
     def validate(self, datos):
         # Al editar otros datos del evento (PATCH sin campos del cliente) no
