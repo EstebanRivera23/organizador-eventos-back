@@ -141,6 +141,14 @@ def registro(request):
     )
 
 
+# El mismo texto si el correo no existe o si la contraseña está mal, para no
+# revelar qué correos tienen cuenta.
+MENSAJE_LOGIN_INCORRECTO = (
+    "Ups, el correo o la contraseña no son correctos. "
+    "Revisa tus datos e intenta de nuevo."
+)
+
+
 @extend_schema(
     tags=["Sesión"],
     summary="Iniciar sesión",
@@ -190,7 +198,7 @@ def login(request):
         or not check_password(password, organizador.password_hash)
     ):
         return Response(
-            {"detail": "Credenciales inválidas."},
+            {"detail": MENSAJE_LOGIN_INCORRECTO},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
@@ -219,9 +227,9 @@ def organizador_me(request):
 
 
 def formato_horas(horas):
-    """7.00 -> "7", 7.50 -> "7,5": así se muestran las horas en los mensajes."""
+    """7.00 -> "7", 7.50 -> "7.5": así se muestran las horas en los mensajes."""
     texto = f"{horas:.2f}".rstrip("0").rstrip(".")
-    return (texto or "0").replace(".", ",")
+    return texto or "0"
 
 
 def esta_finalizada(estado):

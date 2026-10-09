@@ -178,7 +178,12 @@ EJEMPLO_CORREO_REPETIDO = OpenApiExample(
 
 EJEMPLO_CREDENCIALES = OpenApiExample(
     "Correo o contraseña incorrectos",
-    value={"detail": "Credenciales inválidas."},
+    value={
+        "detail": (
+            "Ups, el correo o la contraseña no son correctos. "
+            "Revisa tus datos e intenta de nuevo."
+        )
+    },
     response_only=True,
     status_codes=["401"],
 )
