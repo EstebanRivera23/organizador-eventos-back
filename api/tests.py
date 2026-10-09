@@ -408,6 +408,16 @@ class ResolucionDeConflictoTests(ApiTestCase):
         self.assertEqual(fecha, "2030-01-11")
         self.assertEqual(respuesta.data["carga_dia"]["horas_planificadas"], "2.00")
 
+    def test_posponer_no_propone_el_dia_en_que_ya_esta(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 11), 2)
+
+        # Se intenta adelantar del 11 al 10: el 11 es donde ya está.
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+
+        posponer = respuesta.data["conflicto"]["fecha_posponer"]
+        self.assertEqual(str(posponer["fecha"]), "2030-01-12")
+
     def test_mover_a_una_fecha_sugerida_resuelve_y_devuelve_la_carga(self):
         self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
         proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
