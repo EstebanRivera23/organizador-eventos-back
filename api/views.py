@@ -643,6 +643,14 @@ def subtarea_detail(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# Texto de la regla de orden, igual al que muestra el front en la vista Hoy.
+REGLA_HOY = (
+    "Se muestran primero las de hoy, luego las vencidas y después las "
+    "próximas. Dentro de cada grupo van por fecha objetivo y, si empatan, "
+    "primero la de menor esfuerzo estimado."
+)
+
+
 @extend_schema(
     tags=["Gestiones"],
     operation_id="gestiones_hoy",
@@ -744,7 +752,7 @@ def subtareas_hoy(request):
             "evento_id": evento_id,
             "estado": estado
         },
-        "regla": "Se muestran primero las vencidas, luego las de hoy y despues las proximas. En empate se prioriza menor esfuerzo estimado.",
+        "regla": REGLA_HOY,
         "vencidas": SubtareaSerializer(vencidas, many=True).data,
         "para_hoy": SubtareaSerializer(para_hoy, many=True).data,
         "proximas": SubtareaSerializer(proximas, many=True).data
