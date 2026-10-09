@@ -3,6 +3,7 @@
 from .views import (
     health_check,
     login,
+    registro,
     organizador_me,
     limite_diario,
     eventos_list_create,
@@ -15,6 +16,7 @@ from .views import (
 urlpatterns = [
     path("health/", health_check, name="health_check"),
 
+    path("registro/", registro, name="registro"),
     path("login/", login, name="login"),
     path("organizador/me/", organizador_me, name="organizador_me"),
     path("organizador/limite-diario/", limite_diario, name="limite_diario"),

@@ -9,6 +9,39 @@ MENSAJE_RANGO_LIMITE = "El límite debe estar entre 1 y 16 horas por día."
 MENSAJE_LIMITE_INVALIDO = "Escribe el límite como un número de horas, por ejemplo 6 o 4.5."
 
 
+class RegistroSerializer(serializers.Serializer):
+    nombre = serializers.CharField(
+        max_length=120,
+        error_messages={
+            "required": "Este campo es obligatorio.",
+            "blank": "Este campo es obligatorio.",
+            "null": "Este campo es obligatorio.",
+            "max_length": "El nombre es demasiado largo.",
+        },
+    )
+    email = serializers.EmailField(
+        error_messages={
+            "required": "Este campo es obligatorio.",
+            "blank": "Este campo es obligatorio.",
+            "null": "Este campo es obligatorio.",
+            "invalid": "Escribe un correo válido, por ejemplo ana@correo.com.",
+        },
+    )
+    password = serializers.CharField(
+        min_length=6,
+        write_only=True,
+        error_messages={
+            "required": "Este campo es obligatorio.",
+            "blank": "Este campo es obligatorio.",
+            "null": "Este campo es obligatorio.",
+            "min_length": "La contraseña debe tener al menos 6 caracteres.",
+        },
+    )
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
 class LimiteDiarioSerializer(serializers.Serializer):
     limite_horas_dia = serializers.DecimalField(
         max_digits=4,

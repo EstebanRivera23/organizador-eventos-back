@@ -22,8 +22,7 @@ class EstadoApiSerializer(serializers.Serializer):
 
 class LoginSerializer(serializers.Serializer):
     email = serializers.CharField()
-    password = serializers.CharField(min_length=6)
-    nombre = serializers.CharField(required=False)
+    password = serializers.CharField()
 
 
 class OrganizadorSerializer(serializers.Serializer):
@@ -148,8 +147,36 @@ EJEMPLO_SESION = OpenApiExample(
     status_codes=["200"],
 )
 
+EJEMPLO_REGISTRO = OpenApiExample(
+    "Registro",
+    value={"nombre": "Ana Gómez", "email": "ana@correo.com", "password": "secreto123"},
+    request_only=True,
+)
+
+EJEMPLO_CUENTA_CREADA = OpenApiExample(
+    "Cuenta creada",
+    value={
+        "message": "Cuenta creada",
+        "token": "IjNmYTg1ZjY0Ii...",
+        "organizador": {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "nombre": "Ana Gómez",
+            "email": "ana@correo.com",
+        },
+    },
+    response_only=True,
+    status_codes=["201"],
+)
+
+EJEMPLO_CORREO_REPETIDO = OpenApiExample(
+    "El correo ya tiene cuenta",
+    value={"email": ["Ya existe una cuenta con este correo."]},
+    response_only=True,
+    status_codes=["400"],
+)
+
 EJEMPLO_CREDENCIALES = OpenApiExample(
-    "Contraseña incorrecta",
+    "Correo o contraseña incorrectos",
     value={"detail": "Credenciales inválidas."},
     response_only=True,
     status_codes=["401"],
