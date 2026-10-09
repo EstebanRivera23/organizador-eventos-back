@@ -126,11 +126,25 @@ CSRF_TRUSTED_ORIGINS = [
 
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # La sesión se valida con el token propio (ver obtener_organizador_autenticado),
+    # no con la autenticación de DRF.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
 }
 
 SPECTACULAR_SETTINGS = {
     "TITLE": "Organizador de Eventos API",
-    "DESCRIPTION": "Documentacion de la API backend del proyecto Organizador de Eventos Independientes.",
+    "DESCRIPTION": (
+        "API del Organizador de Eventos Independientes. Casi todos los "
+        "endpoints piden sesión: primero se hace login y el token que "
+        "devuelve se pone en el botón Authorize."
+    ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+    # La sesión es un token propio que va en el encabezado Authorization.
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "Token": {"type": "http", "scheme": "bearer"},
+        },
+    },
+    "SECURITY": [{"Token": []}],
 }
