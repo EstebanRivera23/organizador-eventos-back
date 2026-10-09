@@ -645,7 +645,7 @@ def subtarea_detail(request, pk):
 
 # Texto de la regla de orden, igual al que muestra el front en la vista Hoy.
 REGLA_HOY = (
-    "Se muestran primero las de hoy, luego las vencidas y después las "
+    "Se muestran primero las vencidas, luego las de hoy y después las "
     "próximas. Dentro de cada grupo van por fecha objetivo y, si empatan, "
     "primero la de menor esfuerzo estimado."
 )
