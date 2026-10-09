@@ -172,7 +172,7 @@ class SobrecargaDiariaTests(ApiTestCase):
 
         self.assertEqual(
             respuesta.data["detail"],
-            "Quedarías con 7,5h planificadas (límite 6h)",
+            "Quedarías con 7.5h planificadas (límite 6h)",
         )
 
     def test_las_finalizadas_no_cuentan(self):
@@ -453,7 +453,7 @@ class ResolucionDeConflictoTests(ApiTestCase):
 
         self.assertEqual(respuesta.status_code, 409)
         self.assertEqual(
-            respuesta.data["detail"], "Quedarías con 6,5h planificadas (límite 6h)"
+            respuesta.data["detail"], "Quedarías con 6.5h planificadas (límite 6h)"
         )
 
 
