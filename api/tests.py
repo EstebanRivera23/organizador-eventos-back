@@ -555,7 +555,11 @@ class LoginTests(APITestCase):
         respuesta = self.entrar("nuevo@correo.com", "secreto123")
 
         self.assertEqual(respuesta.status_code, 401)
-        self.assertEqual(respuesta.data["detail"], "Credenciales inválidas.")
+        self.assertEqual(
+            respuesta.data["detail"],
+            "Ups, el correo o la contraseña no son correctos. "
+            "Revisa tus datos e intenta de nuevo.",
+        )
         self.assertFalse(Organizador.objects.filter(email="nuevo@correo.com").exists())
 
     def test_no_revela_si_el_correo_existe(self):

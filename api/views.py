@@ -141,6 +141,14 @@ def registro(request):
     )
 
 
+# El mismo texto si el correo no existe o si la contraseña está mal, para no
+# revelar qué correos tienen cuenta.
+MENSAJE_LOGIN_INCORRECTO = (
+    "Ups, el correo o la contraseña no son correctos. "
+    "Revisa tus datos e intenta de nuevo."
+)
+
+
 @extend_schema(
     tags=["Sesión"],
     summary="Iniciar sesión",
@@ -190,7 +198,7 @@ def login(request):
         or not check_password(password, organizador.password_hash)
     ):
         return Response(
-            {"detail": "Credenciales inválidas."},
+            {"detail": MENSAJE_LOGIN_INCORRECTO},
             status=status.HTTP_401_UNAUTHORIZED
         )
 
