@@ -64,6 +64,7 @@ class ConflictoSerializer(serializers.Serializer):
     horas_gestion = serializers.CharField()
     horas_disponibles = serializers.CharField()
     fechas_sugeridas = FechaSugeridaSerializer(many=True)
+    fecha_posponer = FechaSugeridaSerializer(allow_null=True)
 
 
 class SobrecargaSerializer(serializers.Serializer):
@@ -238,6 +239,7 @@ EJEMPLO_SOBRECARGA = OpenApiExample(
                 {"fecha": "2026-10-13", "horas_planificadas": "2.00"},
                 {"fecha": "2026-10-14", "horas_planificadas": "2.00"},
             ],
+            "fecha_posponer": {"fecha": "2026-10-13", "horas_planificadas": "2.00"},
         },
     },
     response_only=True,

@@ -287,6 +287,33 @@ def sugerir_fechas(organizador, subtarea, fecha, horas):
     return sorted(sugeridas, key=lambda sugerida: sugerida["fecha"])
 
 
+def fecha_para_posponer(organizador, subtarea, fecha, horas):
+    """
+    Primer día después de `fecha` en el que la gestión cabe sin pasar el
+    límite diario. No va más allá del día del evento; si no hay, None.
+    """
+    dia_del_evento = timezone.localtime(subtarea.evento.fecha_hora).date()
+    candidata = max(fecha + timedelta(days=1), timezone.localdate())
+    if candidata > dia_del_evento:
+        return None
+
+    limite = organizador.limite_horas_dia
+    carga = horas_por_dia(
+        organizador, candidata, dia_del_evento, sin_subtarea=subtarea
+    )
+
+    while candidata <= dia_del_evento:
+        horas_planificadas = carga.get(candidata, Decimal("0")) + horas
+        if horas_planificadas <= limite:
+            return {
+                "fecha": candidata,
+                "horas_planificadas": f"{horas_planificadas:.2f}",
+            }
+        candidata += timedelta(days=1)
+
+    return None
+
+
 def carga_del_dia(organizador, fecha):
     """Cómo queda el día después de guardar: horas planificadas y límite."""
     horas = horas_por_dia(organizador, fecha, fecha).get(fecha, Decimal("0"))
@@ -347,6 +374,7 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
             "horas_gestion": f"{horas:.2f}",
             "horas_disponibles": f"{max(limite - otras_gestiones, Decimal('0')):.2f}",
             "fechas_sugeridas": sugerir_fechas(organizador, subtarea, fecha, horas),
+            "fecha_posponer": fecha_para_posponer(organizador, subtarea, fecha, horas),
         },
     }
 
