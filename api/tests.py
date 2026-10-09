@@ -375,6 +375,38 @@ class ResolucionDeConflictoTests(ApiTestCase):
 
         self.assertEqual(respuesta.data["conflicto"]["horas_disponibles"], "0.00")
 
+    def test_posponer_es_el_primer_dia_posterior_donde_cabe(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        self.crear_gestion(self.evento, "Confirmar catering", date(2030, 1, 11), 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+
+        # El 9 está libre pero es anterior; el 11 no cabe (5 + 2); el 12 sí.
+        posponer = respuesta.data["conflicto"]["fecha_posponer"]
+        self.assertEqual(str(posponer["fecha"]), "2030-01-12")
+        self.assertEqual(posponer["horas_planificadas"], "2.00")
+
+    def test_posponer_no_pasa_del_dia_del_evento(self):
+        self.crear_gestion(self.evento, "Reservar salón", date(2030, 1, 15), 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=date(2030, 1, 15))
+
+        self.assertIsNone(respuesta.data["conflicto"]["fecha_posponer"])
+
+    def test_posponer_a_esa_fecha_resuelve_el_conflicto(self):
+        self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
+        proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
+        conflicto = self.cambiar_gestion(proveedores, fecha_objetivo=DIA_X)
+        fecha = str(conflicto.data["conflicto"]["fecha_posponer"]["fecha"])
+
+        respuesta = self.cambiar_gestion(proveedores, fecha_objetivo=fecha)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(fecha, "2030-01-11")
+        self.assertEqual(respuesta.data["carga_dia"]["horas_planificadas"], "2.00")
+
     def test_mover_a_una_fecha_sugerida_resuelve_y_devuelve_la_carga(self):
         self.crear_gestion(self.evento, "Reservar salón", DIA_X, 5)
         proveedores = self.crear_gestion(self.evento, "Buscar proveedores", date(2030, 1, 5), 2)
