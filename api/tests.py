@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Organizador, Subtarea
+from .models import Evento, Organizador, Subtarea
 
 URL_LIMITE = "/api/organizador/limite-diario/"
 
@@ -31,7 +31,8 @@ class ApiTestCase(APITestCase):
             {
                 "nombre": nombre,
                 "tipo": "boda",
-                "cliente_contacto": "Cliente de prueba",
+                "cliente_nombre": "Cliente de prueba",
+                "cliente_telefono": "300 123 4567",
                 "fecha_hora": f"{dia}T18:00:00-05:00",
                 "lugar": "Salón de prueba",
             },
@@ -685,3 +686,108 @@ class EstadosDeGestionTests(ApiTestCase):
         self.assertEqual(respuesta.status_code, 400)
         self.assertIn("Estado inválido", respuesta.data["estado"][0])
         self.assertEqual(Subtarea.objects.get(pk=gestion).estado, "por hacer")
+
+
+class ContactoDelClienteTests(ApiTestCase):
+    """Nombre, teléfono y correo del cliente en vez de un solo texto."""
+
+    def setUp(self):
+        self.entrar("prueba1@correo.com")
+
+    def crear(self, **cliente):
+        datos = {
+            "nombre": "Boda de prueba",
+            "tipo": "boda",
+            "fecha_hora": "2030-01-15T18:00:00-05:00",
+            "lugar": "Salón de prueba",
+            **cliente,
+        }
+        return self.client.post("/api/eventos/", datos, format="json")
+
+    def test_guarda_los_tres_campos_y_arma_el_contacto(self):
+        respuesta = self.crear(
+            cliente_nombre=" Ana Torres ",
+            cliente_telefono="+57 (300) 123-4567",
+            cliente_correo="ana@correo.com",
+        )
+
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data["cliente_nombre"], "Ana Torres")
+        self.assertEqual(respuesta.data["cliente_telefono"], "+57 (300) 123-4567")
+        self.assertEqual(respuesta.data["cliente_correo"], "ana@correo.com")
+        self.assertEqual(
+            respuesta.data["cliente_contacto"],
+            "Ana Torres · +57 (300) 123-4567 · ana@correo.com",
+        )
+
+    def test_basta_con_el_telefono_o_con_el_correo(self):
+        solo_telefono = self.crear(cliente_nombre="Ana Torres", cliente_telefono="3001234567")
+        solo_correo = self.crear(cliente_nombre="Luis Mora", cliente_correo="luis@correo.com")
+
+        self.assertEqual(solo_telefono.status_code, 201, solo_telefono.data)
+        self.assertEqual(solo_telefono.data["cliente_contacto"], "Ana Torres · 3001234567")
+        self.assertEqual(solo_correo.status_code, 201, solo_correo.data)
+        self.assertEqual(solo_correo.data["cliente_contacto"], "Luis Mora · luis@correo.com")
+
+    def test_sin_telefono_ni_correo_no_guarda(self):
+        respuesta = self.crear(cliente_nombre="Ana Torres", cliente_telefono="", cliente_correo="")
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(
+            respuesta.data["cliente_telefono"],
+            ["Agrega un teléfono o un correo para contactar al cliente."],
+        )
+
+    def test_el_nombre_del_cliente_es_obligatorio(self):
+        sin_nombre = self.crear(cliente_telefono="3001234567")
+        en_blanco = self.crear(cliente_nombre="  ", cliente_telefono="3001234567")
+
+        for respuesta in (sin_nombre, en_blanco):
+            self.assertEqual(respuesta.status_code, 400)
+            self.assertEqual(
+                respuesta.data["cliente_nombre"], ["El nombre del cliente es obligatorio."]
+            )
+
+    def test_telefono_y_correo_con_formato_malo(self):
+        for telefono in ("12345", "300-CASA-123", "1234567890123456"):
+            respuesta = self.crear(cliente_nombre="Ana Torres", cliente_telefono=telefono)
+            self.assertEqual(respuesta.status_code, 400, telefono)
+            self.assertEqual(
+                respuesta.data["cliente_telefono"],
+                ["Escribe un teléfono válido, de 7 a 15 dígitos."],
+            )
+
+        respuesta = self.crear(cliente_nombre="Ana Torres", cliente_correo="ana-arroba-correo")
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.data["cliente_correo"], ["Escribe un correo válido."])
+
+    def test_editar_el_cliente_vuelve_a_armar_el_contacto(self):
+        evento = self.crear(cliente_nombre="Ana Torres", cliente_telefono="3001234567").data["id"]
+
+        respuesta = self.client.patch(
+            f"/api/eventos/{evento}/",
+            {"cliente_telefono": "", "cliente_correo": "ana@correo.com"},
+            format="json",
+        )
+
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data["cliente_contacto"], "Ana Torres · ana@correo.com")
+
+    def test_un_evento_de_antes_se_puede_editar_sin_tocar_el_cliente(self):
+        evento = self.crear(cliente_nombre="Ana Torres", cliente_telefono="3001234567").data["id"]
+        # Así quedan los eventos viejos tras la migración: solo con el nombre.
+        Evento.objects.filter(pk=evento).update(
+            cliente_contacto="Ana Torres", cliente_telefono=None, cliente_correo=None
+        )
+
+        otro_dato = self.client.patch(
+            f"/api/eventos/{evento}/", {"lugar": "Hacienda El Roble"}, format="json"
+        )
+        solo_nombre = self.client.patch(
+            f"/api/eventos/{evento}/", {"cliente_nombre": "Ana María Torres"}, format="json"
+        )
+
+        self.assertEqual(otro_dato.status_code, 200, otro_dato.data)
+        self.assertEqual(otro_dato.data["cliente_contacto"], "Ana Torres")
+        self.assertEqual(solo_nombre.status_code, 400)
+        self.assertIn("cliente_telefono", solo_nombre.data)
