@@ -28,7 +28,11 @@ class Evento(models.Model):
     )
     nombre = models.TextField()
     tipo = models.TextField()
+    # Texto único de antes. Se sigue guardando, armado con los tres campos.
     cliente_contacto = models.TextField()
+    cliente_nombre = models.TextField(null=True, blank=True)
+    cliente_telefono = models.TextField(null=True, blank=True)
+    cliente_correo = models.TextField(null=True, blank=True)
     fecha_hora = models.DateTimeField()
     lugar = models.TextField()
     plazo_limite = models.DateField(null=True, blank=True)

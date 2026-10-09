@@ -59,4 +59,6 @@ El detalle de cada uno, con ejemplos, está en Swagger. Todos menos `health`, `r
 | GET, PUT, PATCH, DELETE | `/api/subtareas/<id>/` | Ver, editar, reprogramar o eliminar una gestión |
 | GET | `/api/subtareas/hoy/` | Gestiones agrupadas en vencidas, para hoy y próximas |
 
+Un evento guarda el contacto del cliente en tres campos: `cliente_nombre` (obligatorio), `cliente_telefono` y `cliente_correo` (al menos uno de los dos). `cliente_contacto` se sigue devolviendo, armado con esos tres.
+
 Al editar o reprogramar una gestión, si el día queda por encima del límite diario la API no guarda y responde 409 con las cifras, fechas sugeridas y el primer día posterior donde sí cabe, para posponerla.

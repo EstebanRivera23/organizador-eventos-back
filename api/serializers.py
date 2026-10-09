@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -96,8 +97,28 @@ class SubtareaSerializer(serializers.ModelSerializer):
         return estado
 
 
+CAMPOS_CLIENTE = ["cliente_nombre", "cliente_telefono", "cliente_correo"]
+TELEFONO_VALIDO = re.compile(r"^[\d\s+\-()]+$")
+
+
 class EventoSerializer(serializers.ModelSerializer):
     subtareas = SubtareaSerializer(many=True, read_only=True)
+    cliente_nombre = serializers.CharField(
+        allow_blank=True,
+        error_messages={
+            "required": "El nombre del cliente es obligatorio.",
+            "null": "El nombre del cliente es obligatorio.",
+        },
+    )
+    cliente_telefono = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    cliente_correo = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        error_messages={"invalid": "Escribe un correo válido."},
+    )
 
     class Meta:
         model = Evento
@@ -107,6 +128,9 @@ class EventoSerializer(serializers.ModelSerializer):
             "nombre",
             "tipo",
             "cliente_contacto",
+            "cliente_nombre",
+            "cliente_telefono",
+            "cliente_correo",
             "fecha_hora",
             "lugar",
             "plazo_limite",
@@ -114,7 +138,14 @@ class EventoSerializer(serializers.ModelSerializer):
             "created_at",
             "subtareas",
         ]
-        read_only_fields = ["id", "organizador", "estado", "created_at", "subtareas"]
+        read_only_fields = [
+            "id",
+            "organizador",
+            "cliente_contacto",
+            "estado",
+            "created_at",
+            "subtareas",
+        ]
 
     def validate_nombre(self, value):
         if not value.strip():
@@ -126,10 +157,54 @@ class EventoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("El tipo de evento es obligatorio.")
         return value
 
-    def validate_cliente_contacto(self, value):
+    def validate_cliente_nombre(self, value):
         if not value.strip():
-            raise serializers.ValidationError("El cliente o contacto es obligatorio.")
-        return value
+            raise serializers.ValidationError("El nombre del cliente es obligatorio.")
+        return value.strip()
+
+    def validate_cliente_telefono(self, value):
+        telefono = (value or "").strip()
+        if not telefono:
+            return ""
+
+        digitos = sum(caracter.isdigit() for caracter in telefono)
+        if not TELEFONO_VALIDO.match(telefono) or not 7 <= digitos <= 15:
+            raise serializers.ValidationError(
+                "Escribe un teléfono válido, de 7 a 15 dígitos."
+            )
+        return telefono
+
+    def validate_cliente_correo(self, value):
+        return (value or "").strip()
+
+    def validate(self, datos):
+        # Al editar otros datos del evento (PATCH sin campos del cliente) no
+        # se revisa el contacto: así los eventos de antes se pueden seguir
+        # editando.
+        if self.instance is not None and not any(
+            campo in datos for campo in CAMPOS_CLIENTE
+        ):
+            return datos
+
+        def valor(campo):
+            if campo in datos:
+                return datos[campo] or ""
+            return getattr(self.instance, campo, None) or ""
+
+        nombre, telefono, correo = (valor(campo) for campo in CAMPOS_CLIENTE)
+
+        if not telefono and not correo:
+            raise serializers.ValidationError({
+                "cliente_telefono": [
+                    "Agrega un teléfono o un correo para contactar al cliente."
+                ]
+            })
+
+        # El texto único de antes se arma solo, sin lo que venga vacío.
+        datos["cliente_contacto"] = " · ".join(
+            parte for parte in (nombre, telefono, correo) if parte
+        )
+        return datos
 
     def validate_lugar(self, value):
         if not value.strip():
