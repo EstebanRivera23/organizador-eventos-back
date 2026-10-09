@@ -558,6 +558,12 @@ class FiltrosHoyTests(ApiTestCase):
     def test_sin_filtros_trae_todo(self):
         respuesta = self.client.get("/api/subtareas/hoy/")
 
+        self.assertTrue(
+            respuesta.data["regla"].startswith(
+                "Se muestran primero las de hoy, luego las vencidas"
+            )
+        )
+
         self.assertEqual(
             self.ids(respuesta),
             {"vencidas": [self.salon], "para_hoy": [self.torta, self.catering], "proximas": [self.sonido]},
