@@ -392,7 +392,10 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
     methods=["GET"],
     tags=["Límite diario"],
     summary="Ver el límite diario de horas",
-    description="Si el organizador nunca lo ha cambiado, responde 6.",
+    description=(
+        "Si el organizador nunca lo ha cambiado, responde 6, que es el valor "
+        "por defecto."
+    ),
     responses={200: LimiteDiarioSerializer, 401: doc.NO_AUTENTICADO},
     examples=[doc.EJEMPLO_LIMITE],
 )
@@ -401,8 +404,11 @@ def detectar_sobrecarga(organizador, subtarea, cambios):
     tags=["Límite diario"],
     summary="Cambiar el límite diario de horas",
     description=(
-        "Solo acepta valores entre 1 y 16. El límite es de cada organizador y "
-        "se usa desde ese momento para detectar la sobrecarga al reprogramar."
+        "El endpoint acepta valores entre 1 y 16; fuera de ese rango responde "
+        "400 con el rango. El límite es de cada organizador y se usa desde ese "
+        "momento para detectar la sobrecarga al editar o reprogramar.\n\n"
+        "La aplicación hoy solo ofrece 6 horas por día (el valor por defecto): "
+        "esa regla está en la pantalla y no en este endpoint."
     ),
     request=LimiteDiarioSerializer,
     responses={
@@ -449,7 +455,14 @@ def limite_diario(request):
     tags=["Eventos"],
     operation_id="eventos_crear",
     summary="Crear un evento",
+    description=(
+        "Obligatorios: nombre, tipo, fecha y hora, lugar y nombre del "
+        "cliente; además hace falta el teléfono o el correo del cliente "
+        "(basta con uno). `plazo_limite` es opcional y la aplicación ya no lo "
+        "pide."
+    ),
     request=EventoSerializer,
+    examples=[doc.EJEMPLO_EVENTO_CREAR],
     responses={
         201: EventoSerializer,
         400: doc.DATOS_INVALIDOS,
@@ -606,15 +619,22 @@ def subtareas_by_evento(request, evento_id):
     tags=["Gestiones"],
     summary="Editar o reprogramar una gestión",
     description=(
-        "Se pueden mandar solo los campos que cambian. Para reprogramar se "
-        "manda `fecha_objetivo`.\n\n"
-        "Antes de guardar se suman las horas de las gestiones sin finalizar del "
-        "organizador para ese día, en todos sus eventos. Si el cambio le agrega "
-        "horas al día y el total pasa del límite diario, no guarda y responde "
-        "409 con las cifras, las horas que quedan libres ese día y hasta tres "
-        "fechas cercanas donde la gestión sí cabe.\n\n"
+        "Se pueden mandar solo los campos que cambian. La aplicación lo usa de "
+        "dos formas: **Editar** manda `titulo`, `descripcion`, `estado`, "
+        "`fecha_objetivo` y `horas_estimadas`; **Reprogramar** manda "
+        "`fecha_objetivo` y, si cambian, `horas_estimadas`.\n\n"
+        "Cuando cambia la fecha o suben las horas, antes de guardar se suman "
+        "las horas de las gestiones sin finalizar del organizador para ese día, "
+        "en todos sus eventos. Si el cambio le agrega horas al día y el total "
+        "pasa del límite diario, no guarda y responde 409 con `detail`, "
+        "`codigo`, y en `conflicto` las cifras, las horas que quedan libres, "
+        "hasta tres fechas cercanas donde la gestión sí cabe (`fechas_sugeridas`) "
+        "y el primer día posterior con espacio (`fecha_posponer`).\n\n"
+        "Bajar solo las horas, o cambiar título, descripción o estado, no da "
+        "conflicto.\n\n"
         "El conflicto se resuelve con otra petición igual: con una fecha que "
-        "tenga espacio, o con la misma fecha y menos `horas_estimadas`."
+        "tenga espacio, con la misma fecha y menos `horas_estimadas`, o con "
+        "`fecha_posponer`."
     ),
     request=SubtareaSerializer,
     responses={
@@ -625,6 +645,7 @@ def subtareas_by_evento(request, evento_id):
         409: doc.SobrecargaSerializer,
     },
     examples=[
+        doc.EJEMPLO_EDITAR_GESTION,
         doc.EJEMPLO_REPROGRAMAR,
         doc.EJEMPLO_REDUCIR,
         doc.EJEMPLO_GUARDADA,
@@ -694,8 +715,9 @@ REGLA_HOY = (
     summary="Gestiones para la vista Hoy",
     description=(
         "Gestiones sin finalizar del organizador, agrupadas en vencidas, para "
-        "hoy y próximas. Dentro de cada grupo van por fecha objetivo y, si "
-        "empatan, primero la de menos horas."
+        "hoy y próximas. Primero van las vencidas, luego las de hoy y al final "
+        "las próximas. Dentro de cada grupo van por fecha objetivo y, si dos "
+        "coinciden, primero la que toma menos horas."
     ),
     parameters=doc.FILTROS_HOY,
     responses={

@@ -193,6 +193,20 @@ EJEMPLO_LIMITE = OpenApiExample(
     value={"limite_horas_dia": "4.00"},
 )
 
+EJEMPLO_EVENTO_CREAR = OpenApiExample(
+    "Crear un evento",
+    value={
+        "nombre": "Boda de Ana y Luis",
+        "tipo": "Boda",
+        "fecha_hora": "2026-11-14T17:00:00-05:00",
+        "lugar": "Hacienda El Roble",
+        "cliente_nombre": "Ana Gómez",
+        "cliente_telefono": "300 123 4567",
+        "cliente_correo": "ana@correo.com",
+    },
+    request_only=True,
+)
+
 EJEMPLO_LIMITE_FUERA_DE_RANGO = OpenApiExample(
     "Fuera de rango",
     value={"limite_horas_dia": ["El límite debe estar entre 1 y 16 horas por día."]},
@@ -203,6 +217,18 @@ EJEMPLO_LIMITE_FUERA_DE_RANGO = OpenApiExample(
 EJEMPLO_REPROGRAMAR = OpenApiExample(
     "Reprogramar",
     value={"fecha_objetivo": "2026-10-12"},
+    request_only=True,
+)
+
+EJEMPLO_EDITAR_GESTION = OpenApiExample(
+    "Editar una gestión (título, fecha y horas)",
+    value={
+        "titulo": "Buscar proveedores de sonido",
+        "descripcion": "Pedir tres cotizaciones.",
+        "estado": "en curso",
+        "fecha_objetivo": "2026-10-12",
+        "horas_estimadas": 1.5,
+    },
     request_only=True,
 )
 
