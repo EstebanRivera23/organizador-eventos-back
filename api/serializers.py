@@ -79,6 +79,17 @@ class SubtareaSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "evento", "created_at"]
+        extra_kwargs = {
+            "fecha_objetivo": {
+                "help_text": "Día para el que está la gestión (AAAA-MM-DD).",
+            },
+            "horas_estimadas": {
+                "help_text": (
+                    "Horas que toma la gestión, mayores a 0. Se escriben con "
+                    "punto: 1.5."
+                ),
+            },
+        }
 
     def validate_titulo(self, value):
         if not value.strip():
@@ -162,6 +173,20 @@ class EventoSerializer(serializers.ModelSerializer):
             "created_at",
             "subtareas",
         ]
+        extra_kwargs = {
+            "tipo": {
+                "help_text": (
+                    "Tipo de evento. La aplicación ofrece Boda, Cumpleaños, "
+                    "Social, Corporativo y Otro."
+                ),
+            },
+            "plazo_limite": {
+                "help_text": (
+                    "Opcional. La aplicación ya no lo pide ni lo muestra; los "
+                    "eventos que lo tenían lo conservan."
+                ),
+            },
+        }
 
     def validate_nombre(self, value):
         if not value.strip():
